@@ -1,72 +1,26 @@
-# Mofa Video Parser API
+# Mofa Video Parser API v2
 
-A starter Node.js + Express API that parses metadata and available media formats for YouTube URLs. It is inspired by the general request/response pattern of a video parser, but is an independent implementation—not Vidssave's source code or private backend.
+- `POST /api/youtube/metadata`: metadata through official YouTube Data API v3 only.
+- `POST /api/media/download`: streams files only from allowlisted HTTPS hosts you own/control or are licensed to use. This does not download YouTube videos.
 
-Use it only for videos you own or are authorized to download, and follow YouTube's terms and applicable copyright law. Do not use it to bypass access controls or restrictions.
+## Render deployment
+Push to GitHub and deploy as a Docker Web Service using `Dockerfile`. Set:
+- `API_KEY`: strong random secret
+- `YOUTUBE_DATA_API_KEY`: Google Cloud API key with YouTube Data API v3 enabled
+- `ALLOWED_ORIGIN`: your frontend origin, e.g. `https://yourwebsite.com`
+- `AUTHORIZED_MEDIA_HOSTS`: comma-separated exact approved media hosts (do not add YouTube or googlevideo)
+- `MAX_DOWNLOAD_BYTES`: e.g. `52428800` (50 MiB)
+Set health check path to `/health`.
 
-## Requirements
+## Metadata test
+curl -X POST "https://YOUR-SERVICE.onrender.com/api/youtube/metadata" \
+  -H "Content-Type: application/json" -H "X-API-Key: YOUR_API_KEY" \
+  -d '{"link":"https://www.youtube.com/watch?v=VIDEO_ID"}'
 
-- Node.js 20+
-- `yt-dlp` installed and available on your PATH
-- npm
+## Authorized media test
+Only test with a direct file URL from an allowlisted host you own or are licensed to use:
+curl -X POST "https://YOUR-SERVICE.onrender.com/api/media/download" \
+  -H "Content-Type: application/json" -H "X-API-Key: YOUR_API_KEY" \
+  -d '{"url":"https://media.yourdomain.com/sample.mp4"}' -o sample.mp4
 
-Install yt-dlp using its official instructions: https://github.com/yt-dlp/yt-dlp#installation
-
-## Run locally
-
-```bash
-npm install
-cp .env.example .env
-```
-
-Edit `.env` and set a strong random `API_KEY`. Then run:
-
-```bash
-npm start
-```
-
-Health check: `GET http://localhost:3000/health`
-
-## Parse endpoint
-
-`POST http://localhost:3000/api/contentsite_api/media/parse`
-
-Headers:
-```http
-Content-Type: application/json
-X-API-Key: your-secret-key
-```
-
-Body:
-```json
-{
-  "link": "https://www.youtube.com/watch?v=VIDEO_ID"
-}
-```
-
-It also accepts `application/x-www-form-urlencoded` bodies with `link` and `auth` fields for basic compatibility with form-based clients. Prefer `X-API-Key` in production.
-
-Example response shape:
-```json
-{
-  "success": true,
-  "title": "Example title",
-  "thumbnail": "https://...",
-  "duration": 123,
-  "uploader": "Channel",
-  "webpageUrl": "https://www.youtube.com/watch?v=VIDEO_ID",
-  "resources": [
-    {
-      "formatId": "18",
-      "quality": "360p",
-      "format": "mp4",
-      "hasVideo": true,
-      "hasAudio": true,
-      "filesize": 12345678,
-      "url": "https://..."
-    }
-  ]
-}
-```
-
-Media URLs can expire and may require headers/cookies. This starter returns format URLs; it does not proxy or store video files. For production, add logging, monitoring, stronger quotas, HTTPS, and an explicit authorized-use policy. Do not expose the API key in browser-side JavaScript; call the API from your own backend.
+Never commit `.env` or expose secrets in browser JavaScript. Review YouTube API Services terms and developer policies. The official YouTube Data API does not provide a general-purpose downloadable video URL.
