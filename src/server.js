@@ -61,7 +61,6 @@ function runYtDlp(url) {
     "--no-warnings",
     "--no-playlist",
     "--skip-download",
-    "--no-check-certificates=false",
     "--socket-timeout", "15",
     "--retries", "1",
     url
@@ -150,6 +149,6 @@ app.post("/api/contentsite_api/media/parse", requireApiKey, async (req, res) => 
 
 app.use((_req, res) => res.status(404).json({ success: false, error: "Not found." }));
 
-app.listen(PORT, () => {
+app.listen(PORT, "0.0.0.0", () => {
   console.log(`Mofa Video Parser API listening on port ${PORT}`);
 });
