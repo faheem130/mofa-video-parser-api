@@ -1,6 +1,16 @@
+
 {
-  "name":"mofa-video-parser-api","version":"2.0.0","private":true,
-  "main":"src/server.js","scripts":{"start":"node src/server.js"},
-  "engines":{"node":">=20"},
-  "dependencies":{"cors":"^2.8.5","dotenv":"^16.4.7","express":"^4.21.2","express-rate-limit":"^7.5.0","helmet":"^8.0.0"}
+  "name": "mofa-video-parser-api",
+  "version": "2.0.0",
+  "description": "Mofa Video Parser API and responsive website",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^4.21.2",
+    "express-rate-limit": "^7.5.0",
+    "helmet": "^8.0.0"
+  }
 }
