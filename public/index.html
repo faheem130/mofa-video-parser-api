@@ -1,0 +1,540 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#090b13">
+  <meta name="description" content="Mofa Video Parser — preview video information and download authorized media files.">
+  <title>Mofa Video Parser</title>
+
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #090b13;
+      --panel: #111522;
+      --line: #292f43;
+      --text: #f5f7ff;
+      --muted: #a2abc0;
+      --purple: #a69aff;
+      --teal: #62e6c5;
+      --red: #ff929e;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      color: var(--text);
+      background:
+        radial-gradient(ellipse at 50% -10%, #35265d 0, transparent 45%),
+        var(--bg);
+      font: 16px/1.55 Inter, system-ui, -apple-system, sans-serif;
+    }
+
+    button, input { font: inherit; }
+    a { color: inherit; }
+
+    .container { width: min(1000px, 92%); margin: auto; }
+
+    header {
+      min-height: 76px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 15px;
+      border-bottom: 1px solid #ffffff12;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 11px;
+      font-weight: 850;
+      letter-spacing: -.5px;
+    }
+
+    .logo {
+      display: grid;
+      place-items: center;
+      width: 40px;
+      height: 40px;
+      border-radius: 13px;
+      background: linear-gradient(135deg, var(--purple), #6e5be5);
+      color: #090b13;
+      font-size: 20px;
+    }
+
+    .brand span { color: var(--purple); }
+
+    .badge {
+      border: 1px solid #62e6c533;
+      border-radius: 99px;
+      padding: 5px 10px;
+      color: var(--teal);
+      font-size: 12px;
+    }
+
+    .hero { text-align: center; padding: 65px 0 30px; }
+
+    .eyebrow {
+      color: var(--teal);
+      font-size: 12px;
+      font-weight: 800;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+    }
+
+    h1 {
+      font-size: clamp(34px, 6vw, 58px);
+      line-height: 1.1;
+      letter-spacing: -2px;
+      margin: 16px 0;
+    }
+
+    .gradient {
+      background: linear-gradient(90deg, #bcb1ff, #62e6c5);
+      background-clip: text;
+      -webkit-background-clip: text;
+      color: transparent;
+    }
+
+    .hero p {
+      max-width: 620px;
+      margin: auto;
+      color: var(--muted);
+    }
+
+    .panel, .result {
+      max-width: 790px;
+      margin: 20px auto;
+      padding: 22px;
+      border: 1px solid var(--line);
+      border-radius: 20px;
+      background: #111522ed;
+      box-shadow: 0 20px 70px #0003;
+    }
+
+    .section-title { margin: 0 0 5px; font-size: 19px; }
+    .section-note { margin: 0 0 18px; color: var(--muted); font-size: 13px; }
+
+    label {
+      display: block;
+      margin: 14px 0 8px;
+      color: #d6dbee;
+      font-size: 13px;
+    }
+
+    .input-row { display: flex; gap: 10px; }
+
+    input {
+      width: 100%;
+      min-width: 0;
+      padding: 14px;
+      color: var(--text);
+      background: #090d18;
+      border: 1px solid #333a50;
+      border-radius: 11px;
+      outline: none;
+    }
+
+    input:focus {
+      border-color: var(--purple);
+      box-shadow: 0 0 0 3px #a69aff20;
+    }
+
+    button, .link-button {
+      display: inline-flex;
+      justify-content: center;
+      align-items: center;
+      gap: 8px;
+      padding: 12px 16px;
+      border: 0;
+      border-radius: 11px;
+      text-decoration: none;
+      font-size: 13px;
+      font-weight: 800;
+      cursor: pointer;
+      transition: transform .15s, opacity .15s;
+    }
+
+    button:hover, .link-button:hover { transform: translateY(-1px); }
+    button:disabled { opacity: .6; cursor: wait; transform: none; }
+
+    .primary {
+      color: #07120f;
+      background: linear-gradient(135deg, #8bf0d8, var(--teal));
+    }
+
+    .purple {
+      color: #0b0c16;
+      background: linear-gradient(135deg, #c0b6ff, #9381ff);
+    }
+
+    .secondary {
+      color: var(--text);
+      background: #ffffff08;
+      border: 1px solid #393f54;
+    }
+
+    .hint { color: var(--muted); font-size: 12px; margin: 9px 0 0; }
+
+    .status {
+      min-height: 22px;
+      margin-top: 12px;
+      color: var(--muted);
+      font-size: 13px;
+      overflow-wrap: anywhere;
+    }
+
+    .status.error { color: var(--red); }
+    .status.success { color: var(--teal); }
+
+    .notice {
+      padding: 12px;
+      margin-top: 14px;
+      color: var(--muted);
+      font-size: 12px;
+      background: #ffffff05;
+      border: 1px solid #ffffff0c;
+      border-radius: 11px;
+    }
+
+    .result { display: none; padding: 0; overflow: hidden; }
+    .result.show { display: block; }
+
+    .thumbnail {
+      display: block;
+      width: 100%;
+      max-height: 440px;
+      aspect-ratio: 16/9;
+      object-fit: contain;
+      background: #080a10;
+    }
+
+    .result-body { padding: 22px; }
+    .video-title { font-size: 22px; line-height: 1.35; margin: 0 0 12px; }
+
+    .meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-bottom: 16px;
+    }
+
+    .tag {
+      padding: 5px 9px;
+      color: var(--muted);
+      background: #ffffff08;
+      border: 1px solid #ffffff10;
+      border-radius: 8px;
+      font-size: 12px;
+    }
+
+    .actions { display: flex; flex-wrap: wrap; gap: 9px; }
+
+    .description {
+      max-height: 220px;
+      overflow: auto;
+      margin-top: 18px;
+      padding-top: 15px;
+      border-top: 1px solid var(--line);
+      color: var(--muted);
+      font-size: 13px;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+    }
+
+    .features {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 13px;
+      margin: 45px 0;
+    }
+
+    .feature {
+      padding: 20px;
+      border: 1px solid var(--line);
+      border-radius: 15px;
+      background: #ffffff04;
+    }
+
+    .feature .icon { font-size: 23px; }
+    .feature h3 { font-size: 15px; margin: 12px 0 5px; }
+    .feature p { font-size: 13px; color: var(--muted); margin: 0; }
+
+    footer {
+      display: flex;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 12px;
+      padding: 24px 0 30px;
+      border-top: 1px solid #ffffff12;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    @media (max-width: 620px) {
+      .hero { padding-top: 45px; }
+      h1 { letter-spacing: -1px; }
+      .panel { padding: 16px; }
+      .input-row { flex-direction: column; }
+      .input-row button { min-height: 47px; }
+      .features { grid-template-columns: 1fr; }
+      .result-body { padding: 16px; }
+      header { min-height: 66px; }
+    }
+  </style>
+</head>
+
+<body>
+  <header class="container">
+    <div class="brand">
+      <div class="logo">▶</div>
+      MOFA <span>PARSER</span>
+    </div>
+    <div class="badge">VIDEO WORKSPACE</div>
+  </header>
+
+  <main class="container">
+    <section class="hero">
+      <div class="eyebrow">Simple · Fast · Responsive</div>
+      <h1>Your media workspace,<br><span class="gradient">beautifully simplified.</span></h1>
+      <p>Explore video details, preview thumbnails, and download authorized media files from one clean interface.</p>
+    </section>
+
+    <section class="panel">
+      <h2 class="section-title">YouTube video information</h2>
+      <p class="section-note">Paste a video link to view its metadata.</p>
+
+      <form id="metadataForm">
+        <label for="youtubeUrl">YouTube URL or video ID</label>
+        <div class="input-row">
+          <input id="youtubeUrl" type="text" placeholder="Paste YouTube link here…" required>
+          <button id="metadataButton" class="purple" type="submit">Get details ↗</button>
+        </div>
+      </form>
+
+      <div id="metadataStatus" class="status" role="status" aria-live="polite"></div>
+
+      <div class="notice">
+        This tool retrieves video information using the official YouTube Data API.
+        It does not extract YouTube video streams. Download only content you own
+        or are authorized to access.
+      </div>
+    </section>
+
+    <section id="videoResult" class="result" aria-live="polite">
+      <img id="thumbnail" class="thumbnail" alt="Video thumbnail">
+      <div class="result-body">
+        <h2 id="videoTitle" class="video-title"></h2>
+        <div id="videoMeta" class="meta"></div>
+        <div class="actions">
+          <a id="watchLink" class="link-button primary" target="_blank" rel="noopener noreferrer">▶ Watch on YouTube</a>
+          <a id="thumbnailLink" class="link-button secondary" target="_blank" rel="noopener noreferrer">Open thumbnail ↗</a>
+          <button id="copyButton" class="secondary" type="button">Copy details</button>
+        </div>
+        <div id="videoDescription" class="description"></div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2 class="section-title">Download an authorized media file</h2>
+      <p class="section-note">Use a direct HTTPS URL from a media host configured by the server owner.</p>
+
+      <form id="downloadForm">
+        <label for="mediaUrl">Direct video or audio file URL</label>
+        <div class="input-row">
+          <input id="mediaUrl" type="url" placeholder="https://media.example.com/video.mp4" required>
+          <button id="downloadButton" class="primary" type="submit">Download file ↓</button>
+        </div>
+      </form>
+
+      <div id="downloadStatus" class="status" role="status" aria-live="polite"></div>
+      <p class="hint">The media host must be HTTPS and allowlisted in your Render environment variables.</p>
+    </section>
+
+    <section class="features">
+      <article class="feature">
+        <div class="icon">◉</div>
+        <h3>Video information</h3>
+        <p>Titles, channels, descriptions, upload dates, durations, and thumbnails.</p>
+      </article>
+      <article class="feature">
+        <div class="icon">▧</div>
+        <h3>Thumbnail preview</h3>
+        <p>Preview available thumbnails and open the image in a new tab.</p>
+      </article>
+      <article class="feature">
+        <div class="icon">⇩</div>
+        <h3>Authorized downloads</h3>
+        <p>Download direct media files from your approved media hosts.</p>
+      </article>
+    </section>
+  </main>
+
+  <footer class="container">
+    <span>© <span id="year"></span> Mofa IT Solutions</span>
+    <span>Built for responsible media access.</span>
+  </footer>
+
+  <script>
+    const $ = id => document.getElementById(id);
+    let latestVideo = null;
+
+    $("year").textContent = new Date().getFullYear();
+
+    function setStatus(id, message, type = "") {
+      const element = $(id);
+      element.textContent = message;
+      element.className = "status " + type;
+    }
+
+    function formatDuration(seconds) {
+      if (!Number.isFinite(seconds)) return "Duration unavailable";
+      const h = Math.floor(seconds / 3600);
+      const m = Math.floor((seconds % 3600) / 60);
+      const s = seconds % 60;
+      if (h) return `${h}h ${m}m ${s}s`;
+      if (m) return `${m}m ${s}s`;
+      return `${s}s`;
+    }
+
+    function bestThumbnail(thumbnails) {
+      return thumbnails?.maxres?.url ||
+        thumbnails?.standard?.url ||
+        thumbnails?.high?.url ||
+        thumbnails?.medium?.url ||
+        thumbnails?.default?.url || "";
+    }
+
+    $("metadataForm").addEventListener("submit", async event => {
+      event.preventDefault();
+
+      const button = $("metadataButton");
+      const result = $("videoResult");
+      latestVideo = null;
+      result.classList.remove("show");
+      button.disabled = true;
+      button.textContent = "Loading…";
+      setStatus("metadataStatus", "Fetching video information…");
+
+      try {
+        const response = await fetch("/api/site/metadata", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ url: $("youtubeUrl").value.trim() })
+        });
+
+        const data = await response.json();
+        if (!response.ok || !data.success) {
+          throw new Error(data.error || "Unable to retrieve video information.");
+        }
+
+        latestVideo = data;
+        $("videoTitle").textContent = data.title || "Untitled video";
+        $("videoDescription").textContent = data.description || "No description available.";
+
+        const imageUrl = bestThumbnail(data.thumbnails);
+        const image = $("thumbnail");
+        image.style.display = imageUrl ? "block" : "none";
+        image.onerror = () => { image.style.display = "none"; };
+        image.src = imageUrl;
+        image.alt = (data.title || "Video") + " thumbnail";
+
+        $("watchLink").href = data.watchUrl;
+        $("thumbnailLink").href = imageUrl || "#";
+        $("thumbnailLink").style.display = imageUrl ? "inline-flex" : "none";
+
+        const date = data.publishedAt
+          ? new Date(data.publishedAt).toLocaleDateString(undefined, {
+              year: "numeric", month: "short", day: "numeric"
+            })
+          : "Date unavailable";
+
+        $("videoMeta").replaceChildren();
+        [data.channelTitle || "Unknown channel",
+         formatDuration(data.durationSeconds), date].forEach(value => {
+          const tag = document.createElement("span");
+          tag.className = "tag";
+          tag.textContent = value;
+          $("videoMeta").appendChild(tag);
+        });
+
+        result.classList.add("show");
+        setStatus("metadataStatus", "Video details loaded successfully.", "success");
+        result.scrollIntoView({ behavior: "smooth", block: "start" });
+      } catch (error) {
+        setStatus("metadataStatus", error.message || "Something went wrong.", "error");
+      } finally {
+        button.disabled = false;
+        button.textContent = "Get details ↗";
+      }
+    });
+
+    $("copyButton").addEventListener("click", async () => {
+      if (!latestVideo) return;
+
+      const details =
+        `${latestVideo.title}\n` +
+        `Channel: ${latestVideo.channelTitle}\n` +
+        `Duration: ${formatDuration(latestVideo.durationSeconds)}\n` +
+        `Published: ${latestVideo.publishedAt}\n` +
+        `URL: ${latestVideo.watchUrl}\n\n` +
+        (latestVideo.description || "");
+
+      try {
+        await navigator.clipboard.writeText(details);
+        setStatus("metadataStatus", "Video details copied.", "success");
+      } catch {
+        setStatus("metadataStatus", "Clipboard access is unavailable in this browser.", "error");
+      }
+    });
+
+    $("downloadForm").addEventListener("submit", async event => {
+      event.preventDefault();
+
+      const button = $("downloadButton");
+      button.disabled = true;
+      button.textContent = "Preparing…";
+      setStatus("downloadStatus", "Checking the media host…");
+
+      try {
+        const response = await fetch("/api/site/media-download", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ url: $("mediaUrl").value.trim() })
+        });
+
+        if (!response.ok) {
+          let message = "Unable to download this file.";
+          try {
+            const error = await response.json();
+            message = error.error || message;
+          } catch {}
+          throw new Error(message);
+        }
+
+        const blob = await response.blob();
+        const objectUrl = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.href = objectUrl;
+        link.download = "mofa-media-file";
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        setTimeout(() => URL.revokeObjectURL(objectUrl), 60000);
+
+        setStatus("downloadStatus", "Download started.", "success");
+      } catch (error) {
+        setStatus("downloadStatus", error.message || "Download failed.", "error");
+      } finally {
+        button.disabled = false;
+        button.textContent = "Download file ↓";
+      }
+    });
+  </script>
+</body>
+        </html>
+        
