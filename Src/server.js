@@ -61,7 +61,6 @@ function runYtDlp(url) {
     "--no-warnings",
     "--no-playlist",
     "--skip-download",
-    "--no-check-certificates=false",
     "--socket-timeout", "15",
     "--retries", "1",
     url
