@@ -1,104 +1,366 @@
-require("dotenv").config();
+
 const express = require("express");
-const cors = require("cors");
 const helmet = require("helmet");
+const cors = require("cors");
 const rateLimit = require("express-rate-limit");
-const { Transform, Readable } = require("node:stream");
-const { pipeline } = require("node:stream/promises");
-const crypto = require("node:crypto");
+const https = require("https");
+const path = require("path");
+const { URL } = require("url");
 
 const app = express();
-const PORT = Number(process.env.PORT || 10000);
+const PORT = process.env.PORT || 10000;
+
 const API_KEY = process.env.API_KEY || "";
-const YOUTUBE_KEY = process.env.YOUTUBE_DATA_API_KEY || "";
-const ORIGINS = (process.env.ALLOWED_ORIGIN || "").split(",").map(s=>s.trim()).filter(Boolean);
-const MEDIA_HOSTS = new Set((process.env.AUTHORIZED_MEDIA_HOSTS || "").split(",").map(s=>s.trim().toLowerCase()).filter(Boolean));
-const MAX_BYTES = Math.max(1, Number(process.env.MAX_DOWNLOAD_BYTES || 52428800));
+const YOUTUBE_API_KEY = process.env.YOUTUBE_DATA_API_KEY || "";
+
+const ALLOWED_HOSTS = (process.env.AUTHORIZED_MEDIA_HOSTS || "")
+  .split(",")
+  .map(host => host.trim().toLowerCase())
+  .filter(Boolean);
+
+const MAX_BYTES = Math.max(
+  1024,
+  Number(process.env.MAX_DOWNLOAD_BYTES || 52428800)
+);
 
 app.disable("x-powered-by");
-app.use(helmet());
-app.use(cors({ origin: ORIGINS.length ? ORIGINS : false }));
-app.use(express.json({limit:"20kb"}));
-app.use(express.urlencoded({extended:false,limit:"20kb"}));
-app.use("/api", rateLimit({windowMs:60000,limit:30,standardHeaders:"draft-7",legacyHeaders:false}));
 
-function requireApiKey(req,res,next) {
-  const supplied = req.get("x-api-key") || "";
-  if (!API_KEY) return res.status(503).json({success:false,error:"API_KEY is not configured."});
-  const a=Buffer.from(supplied), b=Buffer.from(API_KEY);
-  if (a.length!==b.length || !crypto.timingSafeEqual(a,b))
-    return res.status(401).json({success:false,error:"Invalid API key."});
+app.use(helmet({ contentSecurityPolicy: false }));
+app.use(cors({
+  origin: process.env.ALLOWED_ORIGIN || true
+}));
+app.use(express.json({ limit: "32kb" }));
+
+app.use(rateLimit({
+  windowMs: 60 * 1000,
+  limit: 30,
+  standardHeaders: "draft-7",
+  legacyHeaders: false
+}));
+
+app.use(express.static(path.join(__dirname, "../public")));
+
+// -------------------- API AUTHENTICATION --------------------
+
+function apiAuth(req, res, next) {
+  if (!API_KEY || req.get("X-API-Key") !== API_KEY) {
+    return res.status(401).json({
+      success: false,
+      error: "Invalid or missing API key."
+    });
+  }
+
   next();
 }
-function parseYouTubeId(input) {
-  try {
-    const u=new URL(input), host=u.hostname.toLowerCase().replace(/^www\./,"");
-    let id=null;
-    if(host==="youtu.be") id=u.pathname.split("/").filter(Boolean)[0];
-    else if(["youtube.com","m.youtube.com","music.youtube.com"].includes(host)) {
-      id=u.searchParams.get("v");
-      if(!id) { const p=u.pathname.split("/").filter(Boolean); if(["embed","shorts","live"].includes(p[0])) id=p[1]; }
-    }
-    return id && /^[A-Za-z0-9_-]{11}$/.test(id) ? id : null;
-  } catch { return null; }
-}
-function isoSeconds(v) {
-  if(!v) return null;
-  const m=v.match(/^PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?$/);
-  return m ? Number(m[1]||0)*3600+Number(m[2]||0)*60+Number(m[3]||0) : null;
-}
-app.get("/",(_req,res)=>res.json({success:true,name:"Mofa Video Parser API",version:"2.0.0",endpoints:{
-  health:"GET /health",youtubeMetadata:"POST /api/youtube/metadata",authorizedMediaDownload:"POST /api/media/download"
-}}));
-app.get("/health",(_req,res)=>res.json({success:true,service:"mofa-video-parser-api"}));
 
-// Official YouTube Data API: metadata only; deliberately no media extraction/download URLs.
-app.post("/api/youtube/metadata",requireApiKey,async(req,res)=>{
-  if(!YOUTUBE_KEY) return res.status(503).json({success:false,error:"YOUTUBE_DATA_API_KEY is not configured."});
-  const id=parseYouTubeId(String(req.body?.link||req.body?.url||"").trim());
-  if(!id) return res.status(400).json({success:false,error:"Provide a valid YouTube video URL."});
+// -------------------- YOUTUBE URL VALIDATION --------------------
+
+function getVideoId(input) {
+  if (typeof input !== "string") return null;
+
+  const value = input.trim();
+
+  if (/^[A-Za-z0-9_-]{11}$/.test(value)) {
+    return value;
+  }
+
   try {
-    const u=new URL("https://www.googleapis.com/youtube/v3/videos");
-    u.searchParams.set("part","snippet,contentDetails,status"); u.searchParams.set("id",id); u.searchParams.set("key",YOUTUBE_KEY);
-    const r=await fetch(u,{signal:AbortSignal.timeout(12000)}), data=await r.json();
-    if(!r.ok) return res.status(r.status===403?502:r.status).json({success:false,error:"YouTube Data API request failed.",reason:data?.error?.errors?.[0]?.reason||"youtube_api_error"});
-    const v=data.items?.[0];
-    if(!v) return res.status(404).json({success:false,error:"Video not found or not accessible through the API."});
-    const s=v.snippet||{}, d=v.contentDetails||{};
-    res.json({success:true,source:"YouTube Data API v3",id:v.id,title:s.title||null,description:s.description||null,
-      channelTitle:s.channelTitle||null,channelId:s.channelId||null,publishedAt:s.publishedAt||null,
-      thumbnails:s.thumbnails||{},duration:d.duration||null,durationSeconds:isoSeconds(d.duration),
-      embeddable:v.status?.embeddable??null,watchUrl:`https://www.youtube.com/watch?v=${v.id}`});
-  } catch(e) { res.status(502).json({success:false,error:"Could not reach the YouTube Data API.",detail:String(e.message||"Network error").slice(0,200)}); }
+    const url = new URL(value);
+    const host = url.hostname.toLowerCase();
+
+    if (host === "youtu.be" || host === "www.youtu.be") {
+      const id = url.pathname.split("/").filter(Boolean)[0];
+      return /^[A-Za-z0-9_-]{11}$/.test(id || "") ? id : null;
+    }
+
+    const validHosts = [
+      "youtube.com",
+      "www.youtube.com",
+      "m.youtube.com",
+      "music.youtube.com"
+    ];
+
+    if (!validHosts.includes(host)) return null;
+
+    const match = url.pathname.match(
+      /^\/(?:shorts|embed|live)\/([A-Za-z0-9_-]{11})/
+    );
+
+    const id = url.searchParams.get("v") || match?.[1];
+
+    return /^[A-Za-z0-9_-]{11}$/.test(id || "") ? id : null;
+  } catch {
+    return null;
+  }
+}
+
+// -------------------- YOUTUBE METADATA --------------------
+
+async function fetchYouTubeMetadata(req, res) {
+  if (!YOUTUBE_API_KEY) {
+    return res.status(503).json({
+      success: false,
+      error: "YOUTUBE_DATA_API_KEY is not configured on the server."
+    });
+  }
+
+  const id = getVideoId(req.body?.url || req.body?.videoId);
+
+  if (!id) {
+    return res.status(400).json({
+      success: false,
+      error: "Enter a valid YouTube URL or 11-character video ID."
+    });
+  }
+
+  try {
+    const endpoint = new URL(
+      "https://www.googleapis.com/youtube/v3/videos"
+    );
+
+    endpoint.search = new URLSearchParams({
+      part: "snippet,contentDetails,status",
+      id,
+      key: YOUTUBE_API_KEY
+    }).toString();
+
+    const response = await fetch(endpoint);
+    const data = await response.json();
+
+    if (!response.ok) {
+      return res.status(502).json({
+        success: false,
+        error: data.error?.message || "YouTube API request failed."
+      });
+    }
+
+    const video = data.items?.[0];
+
+    if (!video) {
+      return res.status(404).json({
+        success: false,
+        error: "Video not found or unavailable."
+      });
+    }
+
+    const duration = video.contentDetails?.duration || "PT0S";
+    const parts = duration.match(
+      /^PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?$/
+    );
+
+    const durationSeconds = parts
+      ? Number(parts[1] || 0) * 3600 +
+        Number(parts[2] || 0) * 60 +
+        Number(parts[3] || 0)
+      : null;
+
+    return res.json({
+      success: true,
+      source: "YouTube Data API v3",
+      id,
+      title: video.snippet?.title || "",
+      description: video.snippet?.description || "",
+      channelTitle: video.snippet?.channelTitle || "",
+      channelId: video.snippet?.channelId || "",
+      publishedAt: video.snippet?.publishedAt || "",
+      thumbnails: video.snippet?.thumbnails || {},
+      duration,
+      durationSeconds,
+      embeddable: Boolean(video.status?.embeddable),
+      watchUrl: `https://www.youtube.com/watch?v=${id}`
+    });
+  } catch (error) {
+    console.error("YouTube metadata error:", error.message);
+
+    return res.status(502).json({
+      success: false,
+      error: "Unable to contact YouTube Data API."
+    });
+  }
+}
+
+// Website endpoint: API key remains on the server.
+app.post("/api/site/metadata", fetchYouTubeMetadata);
+
+// Protected endpoint for your own API clients.
+app.post("/api/youtube/metadata", apiAuth, fetchYouTubeMetadata);
+
+// -------------------- AUTHORIZED MEDIA DOWNLOADS --------------------
+
+function downloadAuthorizedMedia(req, res) {
+  let mediaUrl;
+
+  try {
+    mediaUrl = new URL(req.body?.url);
+  } catch {
+    return res.status(400).json({
+      success: false,
+      error: "Provide a valid direct media URL."
+    });
+  }
+
+  if (
+    mediaUrl.protocol !== "https:" ||
+    mediaUrl.username ||
+    mediaUrl.password ||
+    !ALLOWED_HOSTS.includes(mediaUrl.hostname.toLowerCase())
+  ) {
+    return res.status(403).json({
+      success: false,
+      error: "This HTTPS media host is not allowlisted by the server owner."
+    });
+  }
+
+  const upstream = https.get(mediaUrl, {
+    timeout: 15000,
+    headers: {
+      "User-Agent": "MofaMediaClient/1.0"
+    }
+  }, remote => {
+    if (remote.statusCode !== 200) {
+      remote.resume();
+
+      return res.status(502).json({
+        success: false,
+        error: "Media host did not return a downloadable file."
+      });
+    }
+
+    const contentType = String(
+      remote.headers["content-type"] || "application/octet-stream"
+    ).split(";")[0].toLowerCase();
+
+    const validTypes =
+      contentType.startsWith("video/") ||
+      contentType.startsWith("audio/") ||
+      contentType === "application/octet-stream";
+
+    if (!validTypes) {
+      remote.resume();
+
+      return res.status(415).json({
+        success: false,
+        error: "The URL does not appear to be a video or audio file."
+      });
+    }
+
+    const length = Number(remote.headers["content-length"] || 0);
+
+    if (length > MAX_BYTES) {
+      remote.resume();
+
+      return res.status(413).json({
+        success: false,
+        error: "File exceeds the configured download limit."
+      });
+    }
+
+    let bytesReceived = 0;
+    let stopped = false;
+
+    remote.on("data", chunk => {
+      bytesReceived += chunk.length;
+
+      if (!stopped && bytesReceived > MAX_BYTES) {
+        stopped = true;
+        remote.destroy();
+
+        if (!res.headersSent) {
+          res.status(413).json({
+            success: false,
+            error: "File exceeds the configured download limit."
+          });
+        } else {
+          res.destroy();
+        }
+      }
+    });
+
+    remote.on("error", () => {
+      if (!res.headersSent) {
+        res.status(502).json({
+          success: false,
+          error: "The media download was interrupted."
+        });
+      } else {
+        res.destroy();
+      }
+    });
+
+    if (stopped) return;
+
+    res.setHeader("Content-Type", contentType);
+    res.setHeader(
+      "Content-Disposition",
+      'attachment; filename="mofa-media-file"'
+    );
+    res.setHeader("X-Content-Type-Options", "nosniff");
+
+    remote.pipe(res);
+  });
+
+  upstream.on("timeout", () => {
+    upstream.destroy(new Error("Media request timed out"));
+  });
+
+  upstream.on("error", error => {
+    console.error("Media download error:", error.message);
+
+    if (!res.headersSent) {
+      res.status(502).json({
+        success: false,
+        error: "Unable to fetch this media file."
+      });
+    } else {
+      res.destroy();
+    }
+  });
+
+  res.on("close", () => {
+    if (!res.writableEnded) upstream.destroy();
+  });
+}
+
+// Public website route; still rate-limited and host-restricted.
+app.post("/api/site/media-download", downloadAuthorizedMedia);
+
+// Protected endpoint for API clients.
+app.post("/api/media/download", apiAuth, downloadAuthorizedMedia);
+
+// -------------------- HEALTH AND ROUTES --------------------
+
+app.get("/health", (_req, res) => {
+  res.json({
+    success: true,
+    status: "ok",
+    service: "Mofa Video Parser API"
+  });
 });
 
-// Separate proxy for authorized files on explicitly allowlisted HTTPS hosts.
-// Do not add YouTube/googlevideo hosts; this is not a YouTube download route.
-app.post("/api/media/download",requireApiKey,async(req,res)=>{
-  let u;
-  try { u=new URL(String(req.body?.url||"").trim()); } catch { return res.status(400).json({success:false,error:"Provide a valid media URL."}); }
-  if(u.protocol!=="https:"||u.username||u.password||!MEDIA_HOSTS.has(u.hostname.toLowerCase()))
-    return res.status(403).json({success:false,error:"HTTPS host is not allowlisted. Use only sources you own or are licensed to download."});
-  try {
-    const upstream=await fetch(u,{redirect:"manual",signal:AbortSignal.timeout(20000),headers:{"User-Agent":"MofaAuthorizedMediaProxy/1.0"}});
-    if(upstream.status>=300&&upstream.status<400) { await upstream.body?.cancel(); return res.status(502).json({success:false,error:"Redirects are disabled; use the final authorized HTTPS URL."}); }
-    if(!upstream.ok||!upstream.body) return res.status(502).json({success:false,error:`Media source returned HTTP ${upstream.status}.`});
-    const type=upstream.headers.get("content-type")||"application/octet-stream";
-    if(!(type.startsWith("video/")||type.startsWith("audio/")||type==="application/octet-stream")) {
-      await upstream.body.cancel(); return res.status(415).json({success:false,error:"Source did not return an audio/video or binary media type."});
-    }
-    const lenHeader=upstream.headers.get("content-length"), len=lenHeader?Number(lenHeader):null;
-    if(len!==null&&Number.isFinite(len)&&len>MAX_BYTES) { await upstream.body.cancel(); return res.status(413).json({success:false,error:"Media exceeds MAX_DOWNLOAD_BYTES."}); }
-    let total=0;
-    const limiter=new Transform({transform(chunk,_enc,cb){total+=chunk.length;cb(total>MAX_BYTES?new Error("MAX_DOWNLOAD_BYTES exceeded"):null,chunk);}});
-    const name=(u.pathname.split("/").filter(Boolean).pop()||"authorized-media").replace(/[^A-Za-z0-9._-]/g,"_").slice(0,100);
-    res.setHeader("Content-Type",type); res.setHeader("Content-Disposition",`attachment; filename="${name}"`);
-    if(len!==null&&Number.isFinite(len)) res.setHeader("Content-Length",String(len));
-    await pipeline(Readable.fromWeb(upstream.body),limiter,res);
-  } catch(e) {
-    if(!res.headersSent) res.status(502).json({success:false,error:"Authorized media download failed or exceeded the configured limit.",detail:String(e.message||"Stream error").slice(0,200)});
-    else res.destroy(e);
+app.get("*", (req, res, next) => {
+  if (req.path.startsWith("/api/")) {
+    return res.status(404).json({
+      success: false,
+      error: "API endpoint not found."
+    });
+  }
+
+  res.sendFile(path.join(__dirname, "../public/index.html"), error => {
+    if (error) next(error);
+  });
+});
+
+app.use((error, _req, res, _next) => {
+  console.error("Server error:", error.message);
+
+  if (!res.headersSent) {
+    res.status(500).json({
+      success: false,
+      error: "Internal server error."
+    });
   }
 });
-app.use((_req,res)=>res.status(404).json({success:false,error:"Not found."}));
-app.listen(PORT,"0.0.0.0",()=>console.log(`Mofa Video Parser API listening on port ${PORT}`));
+
+app.listen(PORT, () => {
+  console.log(`Mofa Video Parser listening on port ${PORT}`);
+});
